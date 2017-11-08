@@ -52,6 +52,18 @@ public class StorageUtil {
         return preferences.getInt("audioIndex", -1);
     }
 
+    public void storeOrder(PlayOrder order) {
+        preferences = context.getSharedPreferences(STORAGE, context.MODE_PRIVATE);
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putInt("order", order.ordinal());
+        editor.apply();
+    }
+
+    public PlayOrder loadOrder() {
+        preferences = context.getSharedPreferences(STORAGE, Context.MODE_PRIVATE);
+        return PlayOrder.values()[preferences.getInt("order", 0)];
+    }
+
     public void clearCachedAudioPlaylist() {
         preferences = context.getSharedPreferences(STORAGE, Context.MODE_PRIVATE);
         SharedPreferences.Editor editor = preferences.edit();

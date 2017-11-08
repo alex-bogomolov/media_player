@@ -28,6 +28,7 @@ import android.util.Log;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Random;
 
 /**
  * Created by admin on 06.11.2017.
@@ -39,6 +40,12 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
         AudioManager.OnAudioFocusChangeListener {
 
     private final IBinder iBinder = new LocalBinder();
+
+    public enum AppControls {
+        PREVIOUS,
+        PLAY_PAUSE,
+        NEXT
+    }
 
     private MediaPlayer mediaPlayer;
     private String mediaFile;
@@ -176,8 +183,9 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
 
     @Override
     public void onCompletion(MediaPlayer mp) {
-        stopMedia();
-        stopSelf();
+        skipToNext();
+        updateMetaData();
+        buildNotification(PlaybackStatus.PLAYING);
     }
 
     @Override
@@ -326,9 +334,59 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
         }
     };
 
+    private BroadcastReceiver seekToReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            int progress = intent.getIntExtra("PROGRESS", -1);
+
+            if (mediaPlayer.isPlaying()) {
+                mediaPlayer.seekTo(progress);
+            }
+        }
+    };
+
+    private BroadcastReceiver appControlsReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            int actionCode = intent.getIntExtra("ACTION_CODE", -1);
+
+            switch (AppControls.values()[actionCode]) {
+                case NEXT:
+                    skipToNext();
+                    updateMetaData();
+                    buildNotification(PlaybackStatus.PLAYING);
+                    break;
+                case PREVIOUS:
+                    skipToPrevious();
+                    updateMetaData();
+                    buildNotification(PlaybackStatus.PLAYING);
+                    break;
+                case PLAY_PAUSE:
+                    if (mediaPlayer.isPlaying()) {
+                        pauseMedia();
+                        buildNotification(PlaybackStatus.PAUSED);
+                    } else {
+                        resumeMedia();
+                        buildNotification(PlaybackStatus.PLAYING);
+                    }
+                    break;
+            }
+        }
+    };
+
     private void register_playNewAudio() {
         IntentFilter filter = new IntentFilter(MainActivity.Broadcast_PLAY_NEW_AUDIO);
         registerReceiver(playNewAudio, filter);
+    }
+
+    private void register_seekTo() {
+        IntentFilter filter = new IntentFilter(MainActivity.BROADCAST_SEEK_TO);
+        registerReceiver(seekToReceiver, filter);
+    }
+
+    private void register_appControls() {
+        IntentFilter filter = new IntentFilter(MainActivity.BROADCAST_APP_CONTROLS);
+        registerReceiver(appControlsReceiver, filter);
     }
 
     @Override
@@ -338,6 +396,8 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
         callStateListener();
         registerBecomingNoisyReceiver();
         register_playNewAudio();
+        register_seekTo();
+        register_appControls();
     }
 
     @Override
@@ -356,6 +416,8 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
 
         unregisterReceiver(becomingNoisyReceiver);
         unregisterReceiver(playNewAudio);
+        unregisterReceiver(seekToReceiver);
+        unregisterReceiver(appControlsReceiver);
 
         new StorageUtil(getApplicationContext()).clearCachedAudioPlaylist();
     }
@@ -425,12 +487,30 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
     }
 
     private void skipToNext() {
-        if (audioIndex == audioList.size() - 1) {
-            audioIndex = 0;
-            activeAudio = audioList.get(audioIndex);
-        } else {
-            activeAudio = audioList.get(++audioIndex);
+        PlayOrder order = new StorageUtil(getApplicationContext()).loadOrder();
+
+        switch (order) {
+            case Loop:
+                if (audioIndex == audioList.size() - 1) {
+                    audioIndex = 0;
+                    activeAudio = audioList.get(audioIndex);
+                } else {
+                    activeAudio = audioList.get(++audioIndex);
+                }
+                break;
+            case Shuffle:
+                Random r = new Random();
+                int newAudioIndex = r.nextInt(audioList.size());
+
+                while (newAudioIndex == audioIndex) {
+                    newAudioIndex = r.nextInt(audioList.size());
+                }
+
+                audioIndex = newAudioIndex;
+                activeAudio = audioList.get(audioIndex);
         }
+
+
 
         new StorageUtil(getApplicationContext()).storeAudioIndex(audioIndex);
         stopMedia();
@@ -439,13 +519,29 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
     }
 
     private void skipToPrevious() {
-        if (audioIndex == 0) {
-            audioIndex = audioList.size() - 1;
-            activeAudio = audioList.get(audioIndex);
-        } else {
-            activeAudio = audioList.get(--audioIndex);
-        }
+        PlayOrder order = new StorageUtil(getApplicationContext()).loadOrder();
 
+        switch (order) {
+            case Loop:
+                if (audioIndex == 0) {
+                    audioIndex = audioList.size() - 1;
+                    activeAudio = audioList.get(audioIndex);
+                } else {
+                    activeAudio = audioList.get(--audioIndex);
+                }
+                break;
+            case Shuffle:
+                Random r = new Random();
+                int newAudioIndex = r.nextInt(audioList.size());
+
+                while (newAudioIndex == audioIndex) {
+                    newAudioIndex = r.nextInt(audioList.size());
+                }
+
+                audioIndex = newAudioIndex;
+                activeAudio = audioList.get(audioIndex);
+        }
+        
         new StorageUtil(getApplicationContext()).storeAudioIndex(audioIndex);
         stopMedia();
         mediaPlayer.reset();
