@@ -73,6 +73,8 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
         registerReceiver(becomingNoisyReceiver, intentFilter);
     }
 
+    private NotificationCompat.Builder playerNotification;
+
     public static final String ACTION_PLAY = "com.bogomolov.alexander.mediaplayer.ACTION_PLAY";
     public static final String ACTION_PAUSE = "com.bogomolov.alexander.mediaplayer.ACTION_PAUSE";
     public static final String ACTION_PREVIOUS = "com.bogomolov.alexander.mediaplayer.ACTION_PREVIOUS";
@@ -81,6 +83,7 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
 
     public static final String BROADCAST_NAME = "com.bogomolov.alexander.mediaplayer.BroadcastName";
     public static final String BROADCAST_SEEK_BAR = "com.bogomolov.alexander.mediaplayer.BroadcastSeekBar";
+    public static final String BROADCAST_PLAY_TITLE = "com.bogomolov.alexander.mediaplayer.BroadcastPlayTitle";
 
     private MediaSessionManager mediaSessionManager;
     private MediaSessionCompat mediaSession;
@@ -141,12 +144,15 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
         intent.putExtra("SONG_NAME", activeAudio.getTitle());
         sendBroadcast(intent);
 
+        broadcastPlayButtonTitle("Pause");
+
         mediaPlayer.prepareAsync();
     }
 
     private void playMedia() {
         if (!mediaPlayer.isPlaying()) {
             mediaPlayer.start();
+            broadcastPlayButtonTitle("Pause");
         }
     }
 
@@ -161,6 +167,7 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
         if (mediaPlayer.isPlaying()) {
             mediaPlayer.pause();
             resumePosition = mediaPlayer.getCurrentPosition();
+            broadcastPlayButtonTitle("Play");
         }
     }
 
@@ -168,7 +175,14 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
         if (!mediaPlayer.isPlaying()) {
             mediaPlayer.seekTo(resumePosition);
             mediaPlayer.start();
+            broadcastPlayButtonTitle("Pause");
         }
+    }
+
+    private void broadcastPlayButtonTitle(String title) {
+        Intent intent = new Intent(BROADCAST_PLAY_TITLE);
+        intent.putExtra("TITLE", title);
+        sendBroadcast(intent);
     }
 
     @Override
@@ -302,16 +316,22 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
 
     private void seekUpdation() {
         try {
-        if (this.mediaPlayer != null && this.mediaPlayer.isPlaying()) {
-            Intent intent = new Intent(BROADCAST_SEEK_BAR);
-            intent.putExtra("DURATION", this.mediaPlayer.getDuration());
-            intent.putExtra("POSITION", this.mediaPlayer.getCurrentPosition());
-            sendBroadcast(intent);
-        }
+            if (this.mediaPlayer != null && this.mediaPlayer.isPlaying()) {
+                Intent intent = new Intent(BROADCAST_SEEK_BAR);
+                intent.putExtra("DURATION", this.mediaPlayer.getDuration());
+                intent.putExtra("POSITION", this.mediaPlayer.getCurrentPosition());
+                intent.putExtra("SONG_NAME", this.activeAudio.getTitle());
+                sendBroadcast(intent);
+
+                if (this.playerNotification != null) {
+                    this.playerNotification.setProgress(this.mediaPlayer.getDuration(), this.mediaPlayer.getCurrentPosition(), false);
+                    ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).notify(NOTIFICATION_ID, playerNotification.build());
+                }
+            }
         } catch (IllegalStateException e) {
             Log.d("MEDIAPLAYER", e.toString());
         }
-        handler.postDelayed(this.seekBarUpdater, 100);
+        handler.postDelayed(this.seekBarUpdater, 2 * 1000);
 
     }
 
@@ -541,7 +561,7 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
                 audioIndex = newAudioIndex;
                 activeAudio = audioList.get(audioIndex);
         }
-        
+
         new StorageUtil(getApplicationContext()).storeAudioIndex(audioIndex);
         stopMedia();
         mediaPlayer.reset();
@@ -560,19 +580,17 @@ public class MediaPlayerService extends Service implements MediaPlayer.OnComplet
             play_pauseAction = playbackAction(0);
         }
 
-        NotificationCompat.Builder notificationBuilder = (NotificationCompat.Builder)
+        this.playerNotification = (NotificationCompat.Builder)
                 new NotificationCompat.Builder(this)
                 .setShowWhen(false)
-                .setStyle(new MediaStyle().setMediaSession(mediaSession.getSessionToken()).setShowActionsInCompactView(0, 1, 2))
-                .setColor(getResources().getColor(R.color.colorPrimary))
                 .setSmallIcon(android.R.drawable.stat_sys_headset)
                 .setContentText(activeAudio.getArtist())
                 .setContentTitle(activeAudio.getAlbum())
                 .setContentInfo(activeAudio.getTitle())
-                .addAction(android.R.drawable.ic_media_previous, "previous", playbackAction(3))
-                .addAction(notificationAction, "pause", play_pauseAction)
-                .addAction(android.R.drawable.ic_media_next, "next", playbackAction(2));
-        ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).notify(NOTIFICATION_ID, notificationBuilder.build());
+                .addAction(android.R.drawable.ic_media_previous, "", playbackAction(3))
+                .addAction(notificationAction, "", play_pauseAction)
+                .addAction(android.R.drawable.ic_media_next, "", playbackAction(2));
+        ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).notify(NOTIFICATION_ID, playerNotification.build());
     }
 
     private void removeNotification() {

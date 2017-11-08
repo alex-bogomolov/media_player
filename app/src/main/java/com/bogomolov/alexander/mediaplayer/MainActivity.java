@@ -1,5 +1,6 @@
 package com.bogomolov.alexander.mediaplayer;
 
+import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.ContentResolver;
@@ -11,6 +12,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.IBinder;
 import android.provider.MediaStore;
+import android.support.v4.app.NotificationCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.support.v7.widget.LinearLayoutManager;
@@ -48,6 +50,7 @@ public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBar
     private BroadcastReceiver songProgressBroadcastReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            nowPlayed.setText(intent.getStringExtra("SONG_NAME"));
             if (!seekBarDragged) {
                 songProgress.setMax(intent.getIntExtra("DURATION", 0));
                 songProgress.setProgress(intent.getIntExtra("POSITION", 0));
@@ -59,6 +62,13 @@ public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBar
         @Override
         public void onReceive(Context context, Intent intent) {
             playAudio(intent.getIntExtra("POSITION", -1));
+        }
+    };
+
+    private BroadcastReceiver playButtonTitleBroadcastReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            playPauseButton.setText(intent.getStringExtra("TITLE"));
         }
     };
 
@@ -178,6 +188,7 @@ public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBar
         registerReceiver(this.songNameBroadcastReceiver, new IntentFilter(MediaPlayerService.BROADCAST_NAME));
         registerReceiver(this.songProgressBroadcastReceiver, new IntentFilter(MediaPlayerService.BROADCAST_SEEK_BAR));
         registerReceiver(this.playNewSongBroadcastReceiver, new IntentFilter(SongsAdapter.PLAY_SONG_BROADCAST));
+        registerReceiver(this.playButtonTitleBroadcastReceiver, new IntentFilter(MediaPlayerService.BROADCAST_PLAY_TITLE));
     }
     @Override
     protected void onPause() {
@@ -185,6 +196,7 @@ public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBar
         unregisterReceiver(this.songNameBroadcastReceiver);
         unregisterReceiver(this.songProgressBroadcastReceiver);
         unregisterReceiver(this.playNewSongBroadcastReceiver);
+        unregisterReceiver(this.playButtonTitleBroadcastReceiver);
     }
 
     public void playAudio(int audioIndex) {
